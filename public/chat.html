@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snappy Chat</title>
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <div class="chat-container">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>💬 Snappy</h2>
+        <span id="currentUser"></span>
+      </div>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="🔍 Search username...">
+      </div>
+      <ul id="userList" class="user-list"></ul>
+    </div>
+
+    <!-- CHAT AREA -->
+    <div class="chat-area" id="chatArea">
+      <div class="empty-chat">👈 Select a user to start chatting</div>
+      <div class="chat-header hidden" id="chatHeader">
+        <img id="chatPartnerDp" src="" alt="">
+        <span id="chatPartnerName"></span>
+        <div class="yt-header-btns">
+          <button id="ytSyncBtn" title="YouTube Sync" style="display:none;">▶️ Watch Together</button>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
+
+      <!-- Snap Preview Modal -->
+      <div class="snap-modal hidden" id="snapModal">
+        <div class="snap-modal-content">
+          <h3>📸 Send a Snap</h3>
+          <div class="snap-preview-container">
+            <img id="snapPreviewImg" src="" alt="Preview">
+            <canvas id="snapCanvas" style="display:none;"></canvas>
+          </div>
+          <div class="filter-buttons">
+            <button data-filter="none">Original</button>
+            <button data-filter="grayscale(100%)">B&W</button>
+            <button data-filter="sepia(100%)">Sepia</button>
+            <button data-filter="brightness(150%)">Bright</button>
+            <button data-filter="blur(3px)">Blur</button>
+          </div>
+          <input type="file" id="snapFileInput" accept="image/*" capture="camera">
+          <div class="snap-actions">
+            <button id="sendSnapBtn">✉️ Send</button>
+            <button id="closeSnapBtn">❌ Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- GIF Modal -->
+      <div class="gif-modal hidden" id="gifModal">
+        <div class="gif-modal-content">
+          <h3>🎞️ Search GIF</h3>
+          <input type="text" id="gifSearchInput" placeholder="Search GIPHY...">
+          <div id="gifResults" class="gif-grid"></div>
+          <button id="closeGifBtn">❌ Close</button>
+        </div>
+      </div>
+
+      <!-- YouTube Sync Panel -->
+      <div class="yt-panel hidden" id="ytPanel">
+        <div class="yt-panel-header">
+          <span>🎬 Watching Together</span>
+          <button id="closeYtPanel">✖</button>
+        </div>
+        <div id="ytPlayerContainer"></div>
+        <div class="yt-controls">
+          <input type="text" id="ytVideoInput" placeholder="Paste YouTube video ID or URL...">
+          <button id="ytLoadBtn">Load</button>
+        </div>
+      </div>
+
+      <div class="chat-input hidden" id="chatInputContainer">
+        <button id="snapBtn" title="Send Snap">📷</button>
+        <button id="gifBtn" title="Send GIF">GIF</button>
+        <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
+        <button id="sendBtn">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- YouTube IFrame API -->
+  <script>
+    // Load YT API dynamically
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+  </script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>

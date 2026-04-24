@@ -1,0 +1,28 @@
+[
+  {
+    "id": "f0f8c94c-3c5d-4d50-815c-a9358934a0b2",
+    "from": "d39d4451-48f8-4af2-963a-4689f66b70f9",
+    "to": "5b6c00e0-7628-48d6-8eaa-64d8a1d0f510",
+    "text": "hi",
+    "timestamp": 1777032066856,
+    "delivered": true
+  },
+  {
+    "id": "445f39e2-63c6-4fde-b5eb-377474a45c22",
+    "from": "5b6c00e0-7628-48d6-8eaa-64d8a1d0f510",
+    "to": "d39d4451-48f8-4af2-963a-4689f66b70f9",
+    "text": "by",
+    "timestamp": 1777032084037,
+    "delivered": true
+  },
+  {
+    "id": "4e36dd1c-510c-4267-83c6-f86d84ba78ef",
+    "from": "d39d4451-48f8-4af2-963a-4689f66b70f9",
+    "to": "5b6c00e0-7628-48d6-8eaa-64d8a1d0f510",
+    "text": "",
+    "type": "snap",
+    "mediaUrl": "/uploads/2eab56a4-c9cc-4793-b0b6-d8d7ea02da99.jpg",
+    "timestamp": 1777032757260,
+    "delivered": true
+  }
+]
