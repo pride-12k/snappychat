@@ -81,8 +81,25 @@ body {
 .message.received { align-self:flex-start; background:#2a2a2a; color:#ddd; border-bottom-left-radius:5px; }
 .message .time { font-size:0.7rem; opacity:0.8; margin-top:5px; }
 .message img, .message video { max-width:200px; border-radius:10px; margin-top:5px; }
-.message .insta-reel iframe { width:100%; min-height:400px; border-radius:10px; border:none; }
 .message .gif-img { max-width:200px; border-radius:10px; }
+
+/* Instagram preview card */
+.insta-preview-card {
+  margin-top:5px;
+}
+.insta-preview-card a {
+  text-decoration: none; color: inherit; display: block;
+}
+.insta-thumb {
+  width:100%; min-height:150px; background:#2a2a2a; border-radius:10px;
+  display:flex; align-items:center; justify-content:center; color:#aaa; font-size:0.9rem;
+}
+.insta-thumb img {
+  width:100%; border-radius:10px;
+}
+.insta-info {
+  margin-top:5px; font-size:0.85rem; color:#ccc;
+}
 
 .chat-input {
   display:flex; gap:8px; padding:10px 15px; border-top:1px solid #333; background:#1a1a1a; align-items:center;
