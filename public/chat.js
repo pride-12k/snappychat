@@ -2,29 +2,39 @@ const user = JSON.parse(localStorage.getItem('user'));
 if (!user) window.location.href = 'index.html';
 
 const socket = io();
+let currentChatUserId = null;
+let ytPlayer = null;
+let ytReady = false;
+let ytCurrentVideoId = null;
 
 // DOM elements
-const currentUserSpan = document.getElementById('currentUser');
+const mainScreen = document.getElementById('mainScreen');
+const chatScreen = document.getElementById('chatScreen');
+const friendList = document.getElementById('friendList');
+const requestList = document.getElementById('requestList');
 const searchInput = document.getElementById('searchInput');
-const userList = document.getElementById('userList');
-const chatHeader = document.getElementById('chatHeader');
+const chatsTabBtn = document.getElementById('chatsTabBtn');
+const requestsTabBtn2 = document.getElementById('requestsTabBtn2');
+const requestsTabBtn = document.getElementById('requestsTabBtn');
+const chatsPane = document.getElementById('chatsPane');
+const requestsPane = document.getElementById('requestsPane');
+const backBtn = document.getElementById('backBtn');
 const chatPartnerDp = document.getElementById('chatPartnerDp');
 const chatPartnerName = document.getElementById('chatPartnerName');
 const messagesDiv = document.getElementById('messages');
-const chatInputContainer = document.getElementById('chatInputContainer');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
-const emptyChat = document.querySelector('.empty-chat');
-const ytSyncBtn = document.getElementById('ytSyncBtn');
+const typingIndicator = document.getElementById('typingIndicator');
 
 // Snap elements
 const snapBtn = document.getElementById('snapBtn');
+const snapFileInput = document.getElementById('snapFileInput');
 const snapModal = document.getElementById('snapModal');
 const snapPreviewImg = document.getElementById('snapPreviewImg');
-const snapFileInput = document.getElementById('snapFileInput');
 const sendSnapBtn = document.getElementById('sendSnapBtn');
 const closeSnapBtn = document.getElementById('closeSnapBtn');
 const filterButtons = document.querySelectorAll('.filter-buttons button');
+const snapCanvas = document.getElementById('snapCanvas');
 
 // GIF elements
 const gifBtn = document.getElementById('gifBtn');
@@ -34,160 +44,286 @@ const gifResults = document.getElementById('gifResults');
 const closeGifBtn = document.getElementById('closeGifBtn');
 
 // YT elements
+const ytSyncBtn = document.getElementById('ytSyncBtn');
 const ytPanel = document.getElementById('ytPanel');
 const closeYtPanel = document.getElementById('closeYtPanel');
 const ytVideoInput = document.getElementById('ytVideoInput');
 const ytLoadBtn = document.getElementById('ytLoadBtn');
 const ytPlayerContainer = document.getElementById('ytPlayerContainer');
 
-let currentChatUserId = null;
-let ytPlayer = null;
-let ytReady = false;
-let ytCurrentVideoId = null;
-
-currentUserSpan.textContent = user.username;
+// Join socket
 socket.emit('join', user.id);
 
-// ---------- Users ----------
-function loadUsers(filter = '') {
-  fetch('/search?q=' + encodeURIComponent(filter))
+// ========== TAB SWITCHING ==========
+chatsTabBtn.addEventListener('click', () => {
+  chatsTabBtn.classList.add('active');
+  requestsTabBtn2.classList.remove('active');
+  chatsPane.classList.add('active');
+  requestsPane.classList.remove('active');
+  loadFriends();
+});
+requestsTabBtn2.addEventListener('click', () => {
+  requestsTabBtn2.classList.add('active');
+  chatsTabBtn.classList.remove('active');
+  requestsPane.classList.add('active');
+  chatsPane.classList.remove('active');
+  loadFriendRequests();
+});
+requestsTabBtn.addEventListener('click', () => {
+  // same as above when header button is clicked
+  requestsTabBtn2.click();
+});
+
+// ========== LOAD FRIENDS ==========
+function loadFriends() {
+  fetch(`/friends/${user.id}`)
     .then(res => res.json())
-    .then(users => {
-      userList.innerHTML = '';
-      users.forEach(u => {
-        if (u.id === user.id) return;
+    .then(friends => {
+      friendList.innerHTML = '';
+      if (friends.length === 0) {
+        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No friends yet. Search a username to add.</li>';
+        return;
+      }
+      friends.forEach(f => {
         const li = document.createElement('li');
-        li.innerHTML = `<img src="${u.dp}" alt="${u.username}"><span>${u.username}</span><span class="online-dot"></span>`;
-        li.addEventListener('click', () => openChat(u));
-        li.dataset.userId = u.id;
-        userList.appendChild(li);
+        const lastMsgText = f.lastMessage ? (f.lastMessage.length > 25 ? f.lastMessage.substring(0,25)+'…' : f.lastMessage) : '';
+        const timeStr = f.lastTime ? new Date(f.lastTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        li.innerHTML = `
+          <img src="${f.dp}" alt="">
+          <div class="friend-info">
+            <div class="name">${f.username}</div>
+            <div class="last-msg">${lastMsgText || 'Start chatting!'}</div>
+          </div>
+          <span class="friend-time">${timeStr}</span>
+          <span class="online-dot"></span>
+        `;
+        li.dataset.userId = f.id;
+        li.addEventListener('click', () => openChat(f));
+        friendList.appendChild(li);
       });
     });
 }
-loadUsers();
-searchInput.addEventListener('input', () => loadUsers(searchInput.value));
 
-// ---------- Open Chat ----------
+// ========== LOAD FRIEND REQUESTS ==========
+function loadFriendRequests() {
+  fetch(`/friend-requests/${user.id}`)
+    .then(res => res.json())
+    .then(requests => {
+      requestList.innerHTML = '';
+      if (requests.length === 0) {
+        requestList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No pending requests</li>';
+        return;
+      }
+      requests.forEach(req => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <img src="${req.senderDp}" alt="">
+          <div class="friend-info">
+            <div class="name">${req.senderUsername}</div>
+            <div style="font-size:0.8rem;color:#888;">wants to be friend</div>
+          </div>
+          <div class="request-actions">
+            <button class="accept-btn" data-id="${req.id}">Accept</button>
+            <button class="reject-btn" data-id="${req.id}">Reject</button>
+          </div>
+        `;
+        requestList.appendChild(li);
+        li.querySelector('.accept-btn').addEventListener('click', () => acceptRequest(req.id));
+        li.querySelector('.reject-btn').addEventListener('click', () => rejectRequest(req.id));
+      });
+    });
+}
+
+// Accept / reject
+async function acceptRequest(requestId) {
+  const res = await fetch('/accept-friend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, userId: user.id })
+  });
+  if (res.ok) loadFriendRequests();
+}
+async function rejectRequest(requestId) {
+  const res = await fetch('/reject-friend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, userId: user.id })
+  });
+  if (res.ok) loadFriendRequests();
+}
+
+// ========== SEARCH USERS & SEND REQUEST ==========
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim();
+  if (q.length < 2) { loadFriends(); return; }
+  fetch(`/search?q=${encodeURIComponent(q)}&userId=${user.id}`)
+    .then(res => res.json())
+    .then(users => {
+      friendList.innerHTML = '';
+      if (users.length === 0) {
+        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No users found. Tap to send friend request.</li>';
+        return;
+      }
+      users.forEach(u => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <img src="${u.dp}" alt="">
+          <div class="friend-info">
+            <div class="name">${u.username}</div>
+            <div style="font-size:0.8rem;color:#888;">Not a friend yet</div>
+          </div>
+          <button class="accept-btn add-friend-btn" data-username="${u.username}">Add</button>
+        `;
+        li.querySelector('.add-friend-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          sendFriendRequest(u.username);
+        });
+        friendList.appendChild(li);
+      });
+    });
+});
+
+async function sendFriendRequest(username) {
+  const res = await fetch('/friend-request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fromId: user.id, toUsername: username })
+  });
+  if (res.ok) alert('Friend request sent!');
+  else {
+    const data = await res.json();
+    alert(data.error || 'Failed');
+  }
+}
+
+// ========== OPEN CHAT ==========
 function openChat(partner) {
   currentChatUserId = partner.id;
   chatPartnerDp.src = partner.dp;
   chatPartnerName.textContent = partner.username;
-  chatHeader.classList.remove('hidden');
-  chatInputContainer.classList.remove('hidden');
-  emptyChat.style.display = 'none';
-  ytSyncBtn.style.display = 'inline-block';
+  mainScreen.classList.add('hidden');
+  chatScreen.classList.remove('hidden');
   messagesDiv.innerHTML = '';
+  typingIndicator.classList.add('hidden');
   ytPanel.classList.add('hidden');
   socket.emit('get-conversation', partner.id);
+  loadFriends(); // refresh list in background
 }
 
-// ---------- Messages ----------
+backBtn.addEventListener('click', () => {
+  chatScreen.classList.add('hidden');
+  mainScreen.classList.remove('hidden');
+  currentChatUserId = null;
+  loadFriends();
+});
+
+// ========== MESSAGE DISPLAY ==========
 socket.on('conversation-history', (msgs) => {
   messagesDiv.innerHTML = '';
-  msgs.forEach(m => displayMessage(m, false));
+  msgs.forEach(m => displayMessage(m));
   scrollToBottom();
 });
 
 socket.on('chat-message', (msg) => {
   if (currentChatUserId && (msg.from === currentChatUserId || msg.to === currentChatUserId)) {
-    displayMessage(msg, true);
+    displayMessage(msg);
+    scrollToBottom();
+  }
+  if (!currentChatUserId || (msg.from !== currentChatUserId && msg.to !== currentChatUserId)) {
+    loadFriends(); // update last message preview
   }
 });
 
-function displayMessage(msg, animate) {
+function displayMessage(msg) {
   const div = document.createElement('div');
   div.classList.add('message');
   div.classList.add(msg.from === user.id ? 'sent' : 'received');
   const time = new Date(msg.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-
   let content = '';
-  if (msg.type === 'snap') {
-    content = `<img src="${msg.mediaUrl}" alt="snap" loading="lazy"><div class="time">${time}</div>`;
-  } else if (msg.type === 'gif') {
-    content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
-  } else if (msg.type === 'instagram') {
-    content = `<div class="insta-reel">${msg.text}</div><div class="time">${time}</div>`;
-  } else {
-    content = `${msg.text}<div class="time">${time}</div>`;
-  }
+  if (msg.type === 'snap') content = `<img src="${msg.mediaUrl}" alt="snap"><div class="time">${time}</div>`;
+  else if (msg.type === 'gif') content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
+  else if (msg.type === 'instagram') content = `<div class="insta-reel">${msg.text}</div><div class="time">${time}</div>`;
+  else content = `${msg.text}<div class="time">${time}</div>`;
   div.innerHTML = content;
-  if (animate) { div.style.opacity = 0; setTimeout(() => div.style.opacity = 1, 10); }
   messagesDiv.appendChild(div);
-  scrollToBottom();
 }
 
 function scrollToBottom() { messagesDiv.scrollTop = messagesDiv.scrollHeight; }
 
-// ---------- Send text / insta link ----------
+// ========== SEND TEXT / INSTA ==========
 function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentChatUserId) return;
-
-  // Check if Instagram reel link
   const instaRegex = /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|p)\/[a-zA-Z0-9_-]+/i;
-  if (instaRegex.test(text)) {
-    const embedHtml = `<iframe src="${text}embed/" width="100%" height="500" frameborder="0" scrolling="no" allowtransparency="true"></iframe>`;
-    socket.emit('private-message', { to: currentChatUserId, text: embedHtml, type: 'instagram' });
-  } else {
-    socket.emit('private-message', { to: currentChatUserId, text, type: 'text' });
-  }
+  const type = instaRegex.test(text) ? 'instagram' : 'text';
+  socket.emit('private-message', { to: currentChatUserId, text, type });
   messageInput.value = '';
-  messageInput.focus();
+  socket.emit('stop-typing', currentChatUserId);
 }
-
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-// ---------- SNAP (Photo with filters) ----------
-snapBtn.addEventListener('click', () => {
-  snapModal.classList.remove('hidden');
-  snapFileInput.click();
+// ========== TYPING INDICATOR ==========
+let typingTimer;
+messageInput.addEventListener('input', () => {
+  if (!currentChatUserId) return;
+  socket.emit('typing', currentChatUserId);
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    socket.emit('stop-typing', currentChatUserId);
+  }, 1500);
 });
+
+socket.on('user-typing', (data) => {
+  if (currentChatUserId === data.from) typingIndicator.classList.remove('hidden');
+});
+socket.on('user-stop-typing', (data) => {
+  if (currentChatUserId === data.from) typingIndicator.classList.add('hidden');
+});
+
+// ========== SNAP ==========
+snapBtn.addEventListener('click', () => snapFileInput.click());
 
 snapFileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      snapPreviewImg.src = ev.target.result;
-      snapPreviewImg.style.filter = 'none';
-    };
-    reader.readAsDataURL(file);
-  }
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    snapPreviewImg.src = ev.target.result;
+    snapPreviewImg.style.filter = 'none';
+    snapModal.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
 });
 
 filterButtons.forEach(btn => {
-  btn.addEventListener('click', () => {
-    snapPreviewImg.style.filter = btn.dataset.filter;
-  });
+  btn.addEventListener('click', () => snapPreviewImg.style.filter = btn.dataset.filter);
 });
 
 closeSnapBtn.addEventListener('click', () => snapModal.classList.add('hidden'));
 
 sendSnapBtn.addEventListener('click', async () => {
   if (!snapPreviewImg.src || !currentChatUserId) return;
-  // Apply filter to canvas before upload
-  const canvas = document.getElementById('snapCanvas');
+  const canvas = snapCanvas;
   const ctx = canvas.getContext('2d');
   const img = new Image();
-  img.crossOrigin = 'anonymous';
   img.src = snapPreviewImg.src;
   img.onload = async () => {
     canvas.width = img.width;
     canvas.height = img.height;
     ctx.filter = snapPreviewImg.style.filter || 'none';
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
     const formData = new FormData();
     formData.append('snap', blob, 'snap.jpg');
-    const resp = await fetch('/upload-snap', { method: 'POST', body: formData });
-    const data = await resp.json();
-    socket.emit('private-message', { to: currentChatUserId, text: '', type: 'snap', mediaUrl: data.url });
+    const res = await fetch('/upload-snap', { method:'POST', body:formData });
+    const data = await res.json();
+    socket.emit('private-message', { to: currentChatUserId, text:'', type:'snap', mediaUrl: data.url });
     snapModal.classList.add('hidden');
   };
 });
 
-// ---------- GIF (GIPHY) ----------
+// ========== GIF ==========
 gifBtn.addEventListener('click', () => gifModal.classList.remove('hidden'));
 closeGifBtn.addEventListener('click', () => gifModal.classList.add('hidden'));
 
@@ -200,49 +336,34 @@ gifSearchInput.addEventListener('input', () => {
 async function searchGifs() {
   const q = gifSearchInput.value.trim();
   if (!q) return;
-  // Using GIPHY public API (no key needed for embed; but we fetch via serverless proxy)
-  // For simplicity, use a hardcoded small set or we can use the embed iFrame approach
-  // Let's use free Tenor/Giphy embed approach? 
-  // Better: fetch from Giphy with a demo key (dc6zaTOxFJmzC - public beta key)
-  try {
-    const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(q)}&limit=12`);
-    const json = await res.json();
-    gifResults.innerHTML = '';
-    json.data.forEach(gif => {
-      const img = document.createElement('img');
-      img.src = gif.images.fixed_height_small.url;
-      img.addEventListener('click', () => {
-        socket.emit('private-message', { to: currentChatUserId, text: '', type: 'gif', mediaUrl: gif.images.fixed_height.url });
-        gifModal.classList.add('hidden');
-      });
-      gifResults.appendChild(img);
+  const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(q)}&limit=12`);
+  const json = await res.json();
+  gifResults.innerHTML = '';
+  json.data.forEach(gif => {
+    const img = document.createElement('img');
+    img.src = gif.images.fixed_height_small.url;
+    img.addEventListener('click', () => {
+      socket.emit('private-message', { to: currentChatUserId, text:'', type:'gif', mediaUrl: gif.images.fixed_height.url });
+      gifModal.classList.add('hidden');
     });
-  } catch(err) { console.error(err); }
+    gifResults.appendChild(img);
+  });
 }
 
-// ---------- YOUTUBE SYNC ----------
-ytSyncBtn.addEventListener('click', () => {
-  ytPanel.classList.toggle('hidden');
-  if (!ytPanel.classList.contains('hidden') && ytReady && !ytPlayer) {
-    loadYtPlayer();
-  }
-});
-
+// ========== YOUTUBE SYNC ==========
+ytSyncBtn.addEventListener('click', () => ytPanel.classList.toggle('hidden'));
 closeYtPanel.addEventListener('click', () => ytPanel.classList.add('hidden'));
 
-window.onYouTubeIframeAPIReady = function() {
-  ytReady = true;
-};
+window.onYouTubeIframeAPIReady = () => { ytReady = true; };
 
 function loadYtPlayer() {
   if (ytPlayer) return;
   ytPlayer = new YT.Player('ytPlayerContainer', {
-    height: '180',
-    width: '100%',
+    height: '180', width: '100%',
     videoId: '',
     playerVars: { controls: 1 },
     events: {
-      onReady: () => { /* */ },
+      onReady: () => {},
       onStateChange: (event) => {
         if (event.data == YT.PlayerState.PLAYING || event.data == YT.PlayerState.PAUSED) {
           socket.emit('youtube-action', {
@@ -261,25 +382,16 @@ function loadYtPlayer() {
 ytLoadBtn.addEventListener('click', () => {
   let videoId = ytVideoInput.value.trim();
   if (!videoId) return;
-  // Extract id from URL
   if (videoId.includes('youtube.com') || videoId.includes('youtu.be')) {
     const url = new URL(videoId);
-    if (videoId.includes('youtu.be')) videoId = url.pathname.slice(1);
-    else videoId = url.searchParams.get('v');
+    videoId = videoId.includes('youtu.be') ? url.pathname.slice(1) : url.searchParams.get('v');
   }
   ytCurrentVideoId = videoId;
   if (!ytPlayer && ytReady) loadYtPlayer();
   if (ytPlayer && ytPlayer.loadVideoById) ytPlayer.loadVideoById(videoId);
-  socket.emit('youtube-action', {
-    to: currentChatUserId,
-    action: 'load',
-    videoId,
-    currentTime: 0,
-    isPlaying: true
-  });
+  socket.emit('youtube-action', { to: currentChatUserId, action:'load', videoId, currentTime:0, isPlaying:true });
 });
 
-// Receive YouTube actions
 socket.on('youtube-action', (data) => {
   if (!currentChatUserId || data.from !== currentChatUserId) return;
   if (!ytPanel.classList.contains('hidden')) {
@@ -287,23 +399,18 @@ socket.on('youtube-action', (data) => {
     if (data.action === 'load' && ytPlayer && data.videoId) {
       ytPlayer.loadVideoById(data.videoId, data.currentTime);
       ytCurrentVideoId = data.videoId;
-    } else if (data.action === 'play' && ytPlayer) {
-      ytPlayer.playVideo();
-    } else if (data.action === 'pause' && ytPlayer) {
-      ytPlayer.pauseVideo();
-    }
-    if (data.action === 'seek' && ytPlayer) {
-      ytPlayer.seekTo(data.currentTime, true);
-    }
+    } else if (data.action === 'play' && ytPlayer) ytPlayer.playVideo();
+    else if (data.action === 'pause' && ytPlayer) ytPlayer.pauseVideo();
   }
 });
 
-// Online/offline
+// ========== ONLINE STATUS ==========
 socket.on('user-online', (userId) => {
-  const li = document.querySelector(`.user-list li[data-user-id="${userId}"]`);
-  if (li) li.classList.add('online');
+  document.querySelectorAll(`.friend-list li[data-user-id="${userId}"]`).forEach(li => li.classList.add('online'));
 });
 socket.on('user-offline', (userId) => {
-  const li = document.querySelector(`.user-list li[data-user-id="${userId}"]`);
-  if (li) li.classList.remove('online');
+  document.querySelectorAll(`.friend-list li[data-user-id="${userId}"]`).forEach(li => li.classList.remove('online'));
 });
+
+// Initial load
+loadFriends();
