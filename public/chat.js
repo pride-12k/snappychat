@@ -70,21 +70,21 @@ requestsTabBtn2.addEventListener('click', () => {
   loadFriendRequests();
 });
 requestsTabBtn.addEventListener('click', () => {
-  // same as above when header button is clicked
   requestsTabBtn2.click();
 });
 
-// ========== LOAD FRIENDS ==========
+// ========== LOAD FRIENDS (Exclude self) ==========
 function loadFriends() {
   fetch(`/friends/${user.id}`)
     .then(res => res.json())
     .then(friends => {
       friendList.innerHTML = '';
       if (friends.length === 0) {
-        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No friends yet. Search a username to add.</li>';
+        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#888;">No friends yet. Search a username to add.</li>';
         return;
       }
       friends.forEach(f => {
+        if (f.id === user.id) return; // ❗️ prevent self
         const li = document.createElement('li');
         const lastMsgText = f.lastMessage ? (f.lastMessage.length > 25 ? f.lastMessage.substring(0,25)+'…' : f.lastMessage) : '';
         const timeStr = f.lastTime ? new Date(f.lastTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
@@ -111,7 +111,7 @@ function loadFriendRequests() {
     .then(requests => {
       requestList.innerHTML = '';
       if (requests.length === 0) {
-        requestList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No pending requests</li>';
+        requestList.innerHTML = '<li style="padding:20px;text-align:center;color:#888;">No pending requests</li>';
         return;
       }
       requests.forEach(req => {
@@ -120,7 +120,7 @@ function loadFriendRequests() {
           <img src="${req.senderDp}" alt="">
           <div class="friend-info">
             <div class="name">${req.senderUsername}</div>
-            <div style="font-size:0.8rem;color:#888;">wants to be friend</div>
+            <div style="font-size:0.8rem;color:#aaa;">wants to be friend</div>
           </div>
           <div class="request-actions">
             <button class="accept-btn" data-id="${req.id}">Accept</button>
@@ -134,22 +134,21 @@ function loadFriendRequests() {
     });
 }
 
-// Accept / reject
 async function acceptRequest(requestId) {
-  const res = await fetch('/accept-friend', {
+  await fetch('/accept-friend', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId, userId: user.id })
   });
-  if (res.ok) loadFriendRequests();
+  loadFriendRequests();
 }
 async function rejectRequest(requestId) {
-  const res = await fetch('/reject-friend', {
+  await fetch('/reject-friend', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId, userId: user.id })
   });
-  if (res.ok) loadFriendRequests();
+  loadFriendRequests();
 }
 
 // ========== SEARCH USERS & SEND REQUEST ==========
@@ -161,16 +160,17 @@ searchInput.addEventListener('input', () => {
     .then(users => {
       friendList.innerHTML = '';
       if (users.length === 0) {
-        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#999;">No users found. Tap to send friend request.</li>';
+        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#888;">No users found. Tap to send friend request.</li>';
         return;
       }
       users.forEach(u => {
+        if (u.id === user.id) return; // ❗️ exclude self
         const li = document.createElement('li');
         li.innerHTML = `
           <img src="${u.dp}" alt="">
           <div class="friend-info">
             <div class="name">${u.username}</div>
-            <div style="font-size:0.8rem;color:#888;">Not a friend yet</div>
+            <div style="font-size:0.8rem;color:#aaa;">Not a friend yet</div>
           </div>
           <button class="accept-btn add-friend-btn" data-username="${u.username}">Add</button>
         `;
@@ -207,7 +207,11 @@ function openChat(partner) {
   typingIndicator.classList.add('hidden');
   ytPanel.classList.add('hidden');
   socket.emit('get-conversation', partner.id);
-  loadFriends(); // refresh list in background
+  // Remove any existing YT player
+  if (ytPlayer) {
+    ytPlayer.destroy();
+    ytPlayer = null;
+  }
 }
 
 backBtn.addEventListener('click', () => {
@@ -217,7 +221,7 @@ backBtn.addEventListener('click', () => {
   loadFriends();
 });
 
-// ========== MESSAGE DISPLAY ==========
+// ========== MESSAGE DISPLAY (Instagram fix) ==========
 socket.on('conversation-history', (msgs) => {
   messagesDiv.innerHTML = '';
   msgs.forEach(m => displayMessage(m));
@@ -229,9 +233,7 @@ socket.on('chat-message', (msg) => {
     displayMessage(msg);
     scrollToBottom();
   }
-  if (!currentChatUserId || (msg.from !== currentChatUserId && msg.to !== currentChatUserId)) {
-    loadFriends(); // update last message preview
-  }
+  loadFriends(); // update last message preview
 });
 
 function displayMessage(msg) {
@@ -240,30 +242,44 @@ function displayMessage(msg) {
   div.classList.add(msg.from === user.id ? 'sent' : 'received');
   const time = new Date(msg.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
   let content = '';
-  if (msg.type === 'snap') content = `<img src="${msg.mediaUrl}" alt="snap"><div class="time">${time}</div>`;
-  else if (msg.type === 'gif') content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
-  else if (msg.type === 'instagram') content = `<div class="insta-reel">${msg.text}</div><div class="time">${time}</div>`;
-  else content = `${msg.text}<div class="time">${time}</div>`;
+
+  if (msg.type === 'snap') {
+    content = `<img src="${msg.mediaUrl}" alt="snap"><div class="time">${time}</div>`;
+  } else if (msg.type === 'gif') {
+    content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
+  } else if (msg.type === 'instagram') {
+    // Embed with proper sandbox allow
+    content = `<div class="insta-reel"><iframe src="${msg.text}" width="100%" height="500" frameborder="0" scrolling="no" allowtransparency="true" allow="encrypted-media" style="border:none; overflow:hidden;"></iframe></div><div class="time">${time}</div>`;
+  } else {
+    content = `${msg.text}<div class="time">${time}</div>`;
+  }
   div.innerHTML = content;
   messagesDiv.appendChild(div);
 }
 
-function scrollToBottom() { messagesDiv.scrollTop = messagesDiv.scrollHeight; }
+function scrollToBottom() {
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
 // ========== SEND TEXT / INSTA ==========
 function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentChatUserId) return;
   const instaRegex = /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|p)\/[a-zA-Z0-9_-]+/i;
-  const type = instaRegex.test(text) ? 'instagram' : 'text';
-  socket.emit('private-message', { to: currentChatUserId, text, type });
+  if (instaRegex.test(text)) {
+    // Convert to embed URL
+    const embedUrl = text.replace(/\/$/, '') + '/embed/';
+    socket.emit('private-message', { to: currentChatUserId, text: embedUrl, type: 'instagram' });
+  } else {
+    socket.emit('private-message', { to: currentChatUserId, text, type: 'text' });
+  }
   messageInput.value = '';
   socket.emit('stop-typing', currentChatUserId);
 }
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-// ========== TYPING INDICATOR ==========
+// ========== TYPING INDICATOR (fixed) ==========
 let typingTimer;
 messageInput.addEventListener('input', () => {
   if (!currentChatUserId) return;
@@ -271,7 +287,7 @@ messageInput.addEventListener('input', () => {
   clearTimeout(typingTimer);
   typingTimer = setTimeout(() => {
     socket.emit('stop-typing', currentChatUserId);
-  }, 1500);
+  }, 2000);
 });
 
 socket.on('user-typing', (data) => {
@@ -281,9 +297,8 @@ socket.on('user-stop-typing', (data) => {
   if (currentChatUserId === data.from) typingIndicator.classList.add('hidden');
 });
 
-// ========== SNAP ==========
+// ========== SNAP (unchanged mostly) ==========
 snapBtn.addEventListener('click', () => snapFileInput.click());
-
 snapFileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -295,18 +310,16 @@ snapFileInput.addEventListener('change', (e) => {
   };
   reader.readAsDataURL(file);
 });
-
 filterButtons.forEach(btn => {
   btn.addEventListener('click', () => snapPreviewImg.style.filter = btn.dataset.filter);
 });
-
 closeSnapBtn.addEventListener('click', () => snapModal.classList.add('hidden'));
-
 sendSnapBtn.addEventListener('click', async () => {
   if (!snapPreviewImg.src || !currentChatUserId) return;
   const canvas = snapCanvas;
   const ctx = canvas.getContext('2d');
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.src = snapPreviewImg.src;
   img.onload = async () => {
     canvas.width = img.width;
@@ -323,16 +336,14 @@ sendSnapBtn.addEventListener('click', async () => {
   };
 });
 
-// ========== GIF ==========
+// ========== GIF (fixed) ==========
 gifBtn.addEventListener('click', () => gifModal.classList.remove('hidden'));
 closeGifBtn.addEventListener('click', () => gifModal.classList.add('hidden'));
-
 let gifSearchTimeout;
 gifSearchInput.addEventListener('input', () => {
   clearTimeout(gifSearchTimeout);
   gifSearchTimeout = setTimeout(searchGifs, 500);
 });
-
 async function searchGifs() {
   const q = gifSearchInput.value.trim();
   if (!q) return;
@@ -350,16 +361,26 @@ async function searchGifs() {
   });
 }
 
-// ========== YOUTUBE SYNC ==========
-ytSyncBtn.addEventListener('click', () => ytPanel.classList.toggle('hidden'));
-closeYtPanel.addEventListener('click', () => ytPanel.classList.add('hidden'));
+// ========== YOUTUBE SYNC (fixed) ==========
+ytSyncBtn.addEventListener('click', () => {
+  ytPanel.classList.toggle('hidden');
+  if (!ytPanel.classList.contains('hidden') && ytReady && !ytPlayer) {
+    loadYtPlayer();
+  }
+});
+closeYtPanel.addEventListener('click', () => {
+  ytPanel.classList.add('hidden');
+});
 
-window.onYouTubeIframeAPIReady = () => { ytReady = true; };
+window.onYouTubeIframeAPIReady = function() {
+  ytReady = true;
+};
 
 function loadYtPlayer() {
   if (ytPlayer) return;
   ytPlayer = new YT.Player('ytPlayerContainer', {
-    height: '180', width: '100%',
+    height: '180',
+    width: '100%',
     videoId: '',
     playerVars: { controls: 1 },
     events: {
@@ -388,8 +409,10 @@ ytLoadBtn.addEventListener('click', () => {
   }
   ytCurrentVideoId = videoId;
   if (!ytPlayer && ytReady) loadYtPlayer();
-  if (ytPlayer && ytPlayer.loadVideoById) ytPlayer.loadVideoById(videoId);
-  socket.emit('youtube-action', { to: currentChatUserId, action:'load', videoId, currentTime:0, isPlaying:true });
+  if (ytPlayer && ytPlayer.loadVideoById) {
+    ytPlayer.loadVideoById(videoId);
+    socket.emit('youtube-action', { to: currentChatUserId, action:'load', videoId, currentTime:0, isPlaying:true });
+  }
 });
 
 socket.on('youtube-action', (data) => {
@@ -399,8 +422,11 @@ socket.on('youtube-action', (data) => {
     if (data.action === 'load' && ytPlayer && data.videoId) {
       ytPlayer.loadVideoById(data.videoId, data.currentTime);
       ytCurrentVideoId = data.videoId;
-    } else if (data.action === 'play' && ytPlayer) ytPlayer.playVideo();
-    else if (data.action === 'pause' && ytPlayer) ytPlayer.pauseVideo();
+    } else if (data.action === 'play' && ytPlayer) {
+      ytPlayer.playVideo();
+    } else if (data.action === 'pause' && ytPlayer) {
+      ytPlayer.pauseVideo();
+    }
   }
 });
 
