@@ -7,6 +7,9 @@ let ytPlayer = null;
 let ytReady = false;
 let ytCurrentVideoId = null;
 
+// Keep track of online users for green dot
+const onlineUsers = new Set();
+
 // DOM elements
 const mainScreen = document.getElementById('mainScreen');
 const chatScreen = document.getElementById('chatScreen');
@@ -73,7 +76,19 @@ requestsTabBtn.addEventListener('click', () => {
   requestsTabBtn2.click();
 });
 
-// ========== LOAD FRIENDS (Exclude self) ==========
+// ========== Apply online status ==========
+function applyOnlineStatus() {
+  document.querySelectorAll('.friend-list li').forEach(li => {
+    const userId = li.dataset.userId;
+    if (onlineUsers.has(userId)) {
+      li.classList.add('online');
+    } else {
+      li.classList.remove('online');
+    }
+  });
+}
+
+// ========== LOAD FRIENDS ==========
 function loadFriends() {
   fetch(`/friends/${user.id}`)
     .then(res => res.json())
@@ -84,7 +99,7 @@ function loadFriends() {
         return;
       }
       friends.forEach(f => {
-        if (f.id === user.id) return; // ❗️ prevent self
+        if (f.id === user.id) return; // prevent self
         const li = document.createElement('li');
         const lastMsgText = f.lastMessage ? (f.lastMessage.length > 25 ? f.lastMessage.substring(0,25)+'…' : f.lastMessage) : '';
         const timeStr = f.lastTime ? new Date(f.lastTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
@@ -101,6 +116,7 @@ function loadFriends() {
         li.addEventListener('click', () => openChat(f));
         friendList.appendChild(li);
       });
+      applyOnlineStatus(); // apply green dots after rendering
     });
 }
 
@@ -164,7 +180,7 @@ searchInput.addEventListener('input', () => {
         return;
       }
       users.forEach(u => {
-        if (u.id === user.id) return; // ❗️ exclude self
+        if (u.id === user.id) return;
         const li = document.createElement('li');
         li.innerHTML = `
           <img src="${u.dp}" alt="">
@@ -207,7 +223,6 @@ function openChat(partner) {
   typingIndicator.classList.add('hidden');
   ytPanel.classList.add('hidden');
   socket.emit('get-conversation', partner.id);
-  // Remove any existing YT player
   if (ytPlayer) {
     ytPlayer.destroy();
     ytPlayer = null;
@@ -218,10 +233,10 @@ backBtn.addEventListener('click', () => {
   chatScreen.classList.add('hidden');
   mainScreen.classList.remove('hidden');
   currentChatUserId = null;
-  loadFriends();
+  loadFriends(); // refresh online status when back
 });
 
-// ========== MESSAGE DISPLAY (Instagram fix) ==========
+// ========== MESSAGE DISPLAY (Instagram preview) ==========
 socket.on('conversation-history', (msgs) => {
   messagesDiv.innerHTML = '';
   msgs.forEach(m => displayMessage(m));
@@ -233,7 +248,7 @@ socket.on('chat-message', (msg) => {
     displayMessage(msg);
     scrollToBottom();
   }
-  loadFriends(); // update last message preview
+  loadFriends();
 });
 
 function displayMessage(msg) {
@@ -248,13 +263,40 @@ function displayMessage(msg) {
   } else if (msg.type === 'gif') {
     content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
   } else if (msg.type === 'instagram') {
-    // Embed with proper sandbox allow
-    content = `<div class="insta-reel"><iframe src="${msg.text}" width="100%" height="500" frameborder="0" scrolling="no" allowtransparency="true" allow="encrypted-media" style="border:none; overflow:hidden;"></iframe></div><div class="time">${time}</div>`;
+    // Show Instagram preview card (thumbnail + link) instead of iframe
+    const originalUrl = msg.text.replace('/embed/', '/'); // convert back to original link
+    content = `
+      <div class="insta-preview-card">
+        <a href="${originalUrl}" target="_blank" rel="noopener noreferrer">
+          <div class="insta-thumb" id="thumb-${msg.id}">
+            <span class="insta-loader">Loading preview...</span>
+          </div>
+          <div class="insta-info">📸 Instagram Reel</div>
+        </a>
+      </div>
+      <div class="time">${time}</div>
+    `;
+    // Fetch thumbnail asynchronously via oEmbed
+    fetchInstagramPreview(msg.id, originalUrl);
   } else {
     content = `${msg.text}<div class="time">${time}</div>`;
   }
   div.innerHTML = content;
   messagesDiv.appendChild(div);
+}
+
+async function fetchInstagramPreview(msgId, postUrl) {
+  try {
+    const oembedUrl = `https://api.instagram.com/oembed?url=${encodeURIComponent(postUrl)}`;
+    const res = await fetch(oembedUrl);
+    const data = await res.json();
+    const thumbContainer = document.getElementById(`thumb-${msgId}`);
+    if (thumbContainer && data.thumbnail_url) {
+      thumbContainer.innerHTML = `<img src="${data.thumbnail_url}" alt="Instagram Reel" style="width:100%; border-radius:10px;">`;
+    }
+  } catch (err) {
+    console.log('Instagram preview not available');
+  }
 }
 
 function scrollToBottom() {
@@ -267,9 +309,8 @@ function sendMessage() {
   if (!text || !currentChatUserId) return;
   const instaRegex = /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|p)\/[a-zA-Z0-9_-]+/i;
   if (instaRegex.test(text)) {
-    // Convert to embed URL
-    const embedUrl = text.replace(/\/$/, '') + '/embed/';
-    socket.emit('private-message', { to: currentChatUserId, text: embedUrl, type: 'instagram' });
+    // Store original link, not embed
+    socket.emit('private-message', { to: currentChatUserId, text: text, type: 'instagram' });
   } else {
     socket.emit('private-message', { to: currentChatUserId, text, type: 'text' });
   }
@@ -279,7 +320,7 @@ function sendMessage() {
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-// ========== TYPING INDICATOR (fixed) ==========
+// ========== TYPING INDICATOR ==========
 let typingTimer;
 messageInput.addEventListener('input', () => {
   if (!currentChatUserId) return;
@@ -297,7 +338,7 @@ socket.on('user-stop-typing', (data) => {
   if (currentChatUserId === data.from) typingIndicator.classList.add('hidden');
 });
 
-// ========== SNAP (unchanged mostly) ==========
+// ========== SNAP ==========
 snapBtn.addEventListener('click', () => snapFileInput.click());
 snapFileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -336,7 +377,7 @@ sendSnapBtn.addEventListener('click', async () => {
   };
 });
 
-// ========== GIF (fixed) ==========
+// ========== GIF ==========
 gifBtn.addEventListener('click', () => gifModal.classList.remove('hidden'));
 closeGifBtn.addEventListener('click', () => gifModal.classList.add('hidden'));
 let gifSearchTimeout;
@@ -361,7 +402,7 @@ async function searchGifs() {
   });
 }
 
-// ========== YOUTUBE SYNC (fixed) ==========
+// ========== YOUTUBE SYNC ==========
 ytSyncBtn.addEventListener('click', () => {
   ytPanel.classList.toggle('hidden');
   if (!ytPanel.classList.contains('hidden') && ytReady && !ytPlayer) {
@@ -430,12 +471,15 @@ socket.on('youtube-action', (data) => {
   }
 });
 
-// ========== ONLINE STATUS ==========
+// ========== ONLINE STATUS (fixed) ==========
 socket.on('user-online', (userId) => {
-  document.querySelectorAll(`.friend-list li[data-user-id="${userId}"]`).forEach(li => li.classList.add('online'));
+  onlineUsers.add(userId);
+  applyOnlineStatus();
 });
+
 socket.on('user-offline', (userId) => {
-  document.querySelectorAll(`.friend-list li[data-user-id="${userId}"]`).forEach(li => li.classList.remove('online'));
+  onlineUsers.delete(userId);
+  applyOnlineStatus();
 });
 
 // Initial load
