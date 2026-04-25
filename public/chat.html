@@ -8,11 +8,14 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Main screen: Chat List / Requests -->
+    <!-- Main screen -->
     <div class="screen main-screen" id="mainScreen">
       <div class="header">
         <h1>💬 Snappy</h1>
-        <button id="requestsTabBtn" class="tab-btn">🙋 Requests</button>
+        <div>
+          <button id="profileBtnMain" class="tab-btn" title="My Profile">👤</button>
+          <button id="requestsTabBtn" class="tab-btn">🙋 Requests</button>
+        </div>
       </div>
       <div class="search-box">
         <input type="text" id="searchInput" placeholder="🔍 Search username...">
@@ -31,7 +34,7 @@
       </div>
     </div>
 
-    <!-- Chat screen (hidden initially) -->
+    <!-- Chat screen -->
     <div class="screen chat-screen hidden" id="chatScreen">
       <div class="chat-header">
         <button id="backBtn" class="back-btn">←</button>
@@ -40,14 +43,17 @@
           <span id="chatPartnerName"></span>
           <span id="typingIndicator" class="typing-indicator hidden">typing…</span>
         </div>
+        <button id="profileBtnChat" class="profile-btn" title="Edit Profile">👤</button>
         <button id="ytSyncBtn" class="yt-sync-btn" title="Watch Together">▶️</button>
       </div>
       <div class="messages" id="messages"></div>
       <div class="chat-input">
         <button id="snapBtn" title="Send Photo">📷</button>
+        <button id="videoBtn" title="Send Video">🎥</button>
         <button id="gifBtn" title="Send GIF">GIF</button>
         <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off">
         <input type="file" id="snapFileInput" accept="image/*" style="display:none">
+        <input type="file" id="videoFileInput" accept="video/*" style="display:none">
         <button id="sendBtn">➤</button>
       </div>
     </div>
@@ -81,6 +87,23 @@
         <input type="text" id="gifSearchInput" placeholder="Search GIPHY...">
         <div id="gifResults" class="gif-grid"></div>
         <button id="closeGifBtn">❌ Close</button>
+      </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div class="modal hidden" id="profileModal">
+      <div class="modal-content">
+        <h3>👤 Edit Profile</h3>
+        <div class="profile-pic-preview">
+          <img id="profileDpPreview" src="" alt="Profile">
+        </div>
+        <input type="file" id="profileDpInput" accept="image/*">
+        <label class="dp-label" for="profileDpInput">Change DP</label>
+        <input type="text" id="profileUsername" placeholder="New username" autocomplete="off">
+        <div class="profile-actions">
+          <button id="saveProfileBtn">Save</button>
+          <button id="closeProfileBtn">Cancel</button>
+        </div>
       </div>
     </div>
 
