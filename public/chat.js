@@ -6,11 +6,8 @@ let currentChatUserId = null;
 let ytPlayer = null;
 let ytReady = false;
 let ytCurrentVideoId = null;
-
-// Keep track of online users for green dot
 const onlineUsers = new Set();
 
-// DOM elements
 const mainScreen = document.getElementById('mainScreen');
 const chatScreen = document.getElementById('chatScreen');
 const friendList = document.getElementById('friendList');
@@ -29,7 +26,6 @@ const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
 const typingIndicator = document.getElementById('typingIndicator');
 
-// Snap elements
 const snapBtn = document.getElementById('snapBtn');
 const snapFileInput = document.getElementById('snapFileInput');
 const snapModal = document.getElementById('snapModal');
@@ -39,14 +35,15 @@ const closeSnapBtn = document.getElementById('closeSnapBtn');
 const filterButtons = document.querySelectorAll('.filter-buttons button');
 const snapCanvas = document.getElementById('snapCanvas');
 
-// GIF elements
+const videoBtn = document.getElementById('videoBtn');
+const videoFileInput = document.getElementById('videoFileInput');
+
 const gifBtn = document.getElementById('gifBtn');
 const gifModal = document.getElementById('gifModal');
 const gifSearchInput = document.getElementById('gifSearchInput');
 const gifResults = document.getElementById('gifResults');
 const closeGifBtn = document.getElementById('closeGifBtn');
 
-// YT elements
 const ytSyncBtn = document.getElementById('ytSyncBtn');
 const ytPanel = document.getElementById('ytPanel');
 const closeYtPanel = document.getElementById('closeYtPanel');
@@ -54,7 +51,15 @@ const ytVideoInput = document.getElementById('ytVideoInput');
 const ytLoadBtn = document.getElementById('ytLoadBtn');
 const ytPlayerContainer = document.getElementById('ytPlayerContainer');
 
-// Join socket
+const profileBtnMain = document.getElementById('profileBtnMain');
+const profileBtnChat = document.getElementById('profileBtnChat');
+const profileModal = document.getElementById('profileModal');
+const profileDpPreview = document.getElementById('profileDpPreview');
+const profileDpInput = document.getElementById('profileDpInput');
+const profileUsername = document.getElementById('profileUsername');
+const saveProfileBtn = document.getElementById('saveProfileBtn');
+const closeProfileBtn = document.getElementById('closeProfileBtn');
+
 socket.emit('join', user.id);
 
 // ========== TAB SWITCHING ==========
@@ -72,19 +77,44 @@ requestsTabBtn2.addEventListener('click', () => {
   chatsPane.classList.remove('active');
   loadFriendRequests();
 });
-requestsTabBtn.addEventListener('click', () => {
-  requestsTabBtn2.click();
+requestsTabBtn.addEventListener('click', () => requestsTabBtn2.click());
+
+// ========== PROFILE ==========
+function openProfileModal() {
+  profileDpPreview.src = user.dp;
+  profileUsername.value = user.username;
+  profileModal.classList.remove('hidden');
+}
+profileBtnMain.addEventListener('click', openProfileModal);
+profileBtnChat.addEventListener('click', openProfileModal);
+closeProfileBtn.addEventListener('click', () => profileModal.classList.add('hidden'));
+
+saveProfileBtn.addEventListener('click', async () => {
+  const username = profileUsername.value.trim();
+  const file = profileDpInput.files[0];
+  const formData = new FormData();
+  formData.append('userId', user.id);
+  if (username) formData.append('username', username);
+  if (file) formData.append('dp', file);
+
+  const res = await fetch('/update-profile', { method: 'POST', body: formData });
+  const data = await res.json();
+  if (data.success) {
+    user.username = data.user.username;
+    user.dp = data.user.dp;
+    localStorage.setItem('user', JSON.stringify(user));
+    loadFriends();
+    profileModal.classList.add('hidden');
+  } else {
+    alert(data.error || 'Failed');
+  }
 });
 
-// ========== Apply online status ==========
+// ========== APPLY ONLINE ==========
 function applyOnlineStatus() {
   document.querySelectorAll('.friend-list li').forEach(li => {
-    const userId = li.dataset.userId;
-    if (onlineUsers.has(userId)) {
-      li.classList.add('online');
-    } else {
-      li.classList.remove('online');
-    }
+    if (onlineUsers.has(li.dataset.userId)) li.classList.add('online');
+    else li.classList.remove('online');
   });
 }
 
@@ -99,7 +129,7 @@ function loadFriends() {
         return;
       }
       friends.forEach(f => {
-        if (f.id === user.id) return; // prevent self
+        if (f.id === user.id) return;
         const li = document.createElement('li');
         const lastMsgText = f.lastMessage ? (f.lastMessage.length > 25 ? f.lastMessage.substring(0,25)+'…' : f.lastMessage) : '';
         const timeStr = f.lastTime ? new Date(f.lastTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
@@ -116,11 +146,11 @@ function loadFriends() {
         li.addEventListener('click', () => openChat(f));
         friendList.appendChild(li);
       });
-      applyOnlineStatus(); // apply green dots after rendering
+      applyOnlineStatus();
     });
 }
 
-// ========== LOAD FRIEND REQUESTS ==========
+// ========== LOAD REQUESTS ==========
 function loadFriendRequests() {
   fetch(`/friend-requests/${user.id}`)
     .then(res => res.json())
@@ -143,31 +173,23 @@ function loadFriendRequests() {
             <button class="reject-btn" data-id="${req.id}">Reject</button>
           </div>
         `;
-        requestList.appendChild(li);
         li.querySelector('.accept-btn').addEventListener('click', () => acceptRequest(req.id));
         li.querySelector('.reject-btn').addEventListener('click', () => rejectRequest(req.id));
+        requestList.appendChild(li);
       });
     });
 }
 
 async function acceptRequest(requestId) {
-  await fetch('/accept-friend', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId, userId: user.id })
-  });
+  await fetch('/accept-friend', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({requestId, userId: user.id}) });
   loadFriendRequests();
 }
 async function rejectRequest(requestId) {
-  await fetch('/reject-friend', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId, userId: user.id })
-  });
+  await fetch('/reject-friend', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({requestId, userId: user.id}) });
   loadFriendRequests();
 }
 
-// ========== SEARCH USERS & SEND REQUEST ==========
+// ========== SEARCH ==========
 searchInput.addEventListener('input', () => {
   const q = searchInput.value.trim();
   if (q.length < 2) { loadFriends(); return; }
@@ -176,40 +198,23 @@ searchInput.addEventListener('input', () => {
     .then(users => {
       friendList.innerHTML = '';
       if (users.length === 0) {
-        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#888;">No users found. Tap to send friend request.</li>';
+        friendList.innerHTML = '<li style="padding:20px;text-align:center;color:#888;">No users found.</li>';
         return;
       }
       users.forEach(u => {
         if (u.id === user.id) return;
         const li = document.createElement('li');
-        li.innerHTML = `
-          <img src="${u.dp}" alt="">
-          <div class="friend-info">
-            <div class="name">${u.username}</div>
-            <div style="font-size:0.8rem;color:#aaa;">Not a friend yet</div>
-          </div>
-          <button class="accept-btn add-friend-btn" data-username="${u.username}">Add</button>
-        `;
-        li.querySelector('.add-friend-btn').addEventListener('click', (e) => {
-          e.stopPropagation();
-          sendFriendRequest(u.username);
-        });
+        li.innerHTML = `<img src="${u.dp}" alt=""><div class="friend-info"><div class="name">${u.username}</div><div style="font-size:0.8rem;color:#aaa;">Not a friend yet</div></div><button class="accept-btn add-friend-btn" data-username="${u.username}">Add</button>`;
+        li.querySelector('.add-friend-btn').addEventListener('click', (e) => { e.stopPropagation(); sendFriendRequest(u.username); });
         friendList.appendChild(li);
       });
     });
 });
 
 async function sendFriendRequest(username) {
-  const res = await fetch('/friend-request', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fromId: user.id, toUsername: username })
-  });
+  const res = await fetch('/friend-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fromId: user.id, toUsername: username}) });
   if (res.ok) alert('Friend request sent!');
-  else {
-    const data = await res.json();
-    alert(data.error || 'Failed');
-  }
+  else { const data = await res.json(); alert(data.error || 'Failed'); }
 }
 
 // ========== OPEN CHAT ==========
@@ -223,26 +228,22 @@ function openChat(partner) {
   typingIndicator.classList.add('hidden');
   ytPanel.classList.add('hidden');
   socket.emit('get-conversation', partner.id);
-  if (ytPlayer) {
-    ytPlayer.destroy();
-    ytPlayer = null;
-  }
+  if (ytPlayer) { ytPlayer.destroy(); ytPlayer = null; }
 }
 
 backBtn.addEventListener('click', () => {
   chatScreen.classList.add('hidden');
   mainScreen.classList.remove('hidden');
   currentChatUserId = null;
-  loadFriends(); // refresh online status when back
+  loadFriends();
 });
 
-// ========== MESSAGE DISPLAY (Instagram preview) ==========
+// ========== MESSAGE DISPLAY ==========
 socket.on('conversation-history', (msgs) => {
   messagesDiv.innerHTML = '';
   msgs.forEach(m => displayMessage(m));
   scrollToBottom();
 });
-
 socket.on('chat-message', (msg) => {
   if (currentChatUserId && (msg.from === currentChatUserId || msg.to === currentChatUserId)) {
     displayMessage(msg);
@@ -257,30 +258,14 @@ function displayMessage(msg) {
   div.classList.add(msg.from === user.id ? 'sent' : 'received');
   const time = new Date(msg.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
   let content = '';
-
-  if (msg.type === 'snap') {
-    content = `<img src="${msg.mediaUrl}" alt="snap"><div class="time">${time}</div>`;
-  } else if (msg.type === 'gif') {
-    content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
-  } else if (msg.type === 'instagram') {
-    // Show Instagram preview card (thumbnail + link) instead of iframe
-    const originalUrl = msg.text.replace('/embed/', '/'); // convert back to original link
-    content = `
-      <div class="insta-preview-card">
-        <a href="${originalUrl}" target="_blank" rel="noopener noreferrer">
-          <div class="insta-thumb" id="thumb-${msg.id}">
-            <span class="insta-loader">Loading preview...</span>
-          </div>
-          <div class="insta-info">📸 Instagram Reel</div>
-        </a>
-      </div>
-      <div class="time">${time}</div>
-    `;
-    // Fetch thumbnail asynchronously via oEmbed
+  if (msg.type === 'snap') content = `<img src="${msg.mediaUrl}" alt="snap"><div class="time">${time}</div>`;
+  else if (msg.type === 'gif') content = `<img src="${msg.mediaUrl}" class="gif-img" alt="gif"><div class="time">${time}</div>`;
+  else if (msg.type === 'video') content = `<video controls src="${msg.mediaUrl}" style="max-width:220px; border-radius:10px;"></video><div class="time">${time}</div>`;
+  else if (msg.type === 'instagram') {
+    const originalUrl = msg.text.replace('/embed/', '/');
+    content = `<div class="insta-preview-card"><a href="${originalUrl}" target="_blank"><div class="insta-thumb" id="thumb-${msg.id}"><span class="insta-loader">Loading preview...</span></div><div class="insta-info">📸 Instagram Reel</div></a></div><div class="time">${time}</div>`;
     fetchInstagramPreview(msg.id, originalUrl);
-  } else {
-    content = `${msg.text}<div class="time">${time}</div>`;
-  }
+  } else content = `${msg.text}<div class="time">${time}</div>`;
   div.innerHTML = content;
   messagesDiv.appendChild(div);
 }
@@ -292,51 +277,36 @@ async function fetchInstagramPreview(msgId, postUrl) {
     const data = await res.json();
     const thumbContainer = document.getElementById(`thumb-${msgId}`);
     if (thumbContainer && data.thumbnail_url) {
-      thumbContainer.innerHTML = `<img src="${data.thumbnail_url}" alt="Instagram Reel" style="width:100%; border-radius:10px;">`;
+      thumbContainer.innerHTML = `<img src="${data.thumbnail_url}" alt="Reel" style="width:100%; border-radius:10px;">`;
     }
-  } catch (err) {
-    console.log('Instagram preview not available');
-  }
+  } catch (err) {}
 }
 
-function scrollToBottom() {
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
+function scrollToBottom() { messagesDiv.scrollTop = messagesDiv.scrollHeight; }
 
 // ========== SEND TEXT / INSTA ==========
 function sendMessage() {
   const text = messageInput.value.trim();
   if (!text || !currentChatUserId) return;
   const instaRegex = /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|p)\/[a-zA-Z0-9_-]+/i;
-  if (instaRegex.test(text)) {
-    // Store original link, not embed
-    socket.emit('private-message', { to: currentChatUserId, text: text, type: 'instagram' });
-  } else {
-    socket.emit('private-message', { to: currentChatUserId, text, type: 'text' });
-  }
+  const type = instaRegex.test(text) ? 'instagram' : 'text';
+  socket.emit('private-message', { to: currentChatUserId, text, type });
   messageInput.value = '';
   socket.emit('stop-typing', currentChatUserId);
 }
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-// ========== TYPING INDICATOR ==========
+// ========== TYPING ==========
 let typingTimer;
 messageInput.addEventListener('input', () => {
   if (!currentChatUserId) return;
   socket.emit('typing', currentChatUserId);
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    socket.emit('stop-typing', currentChatUserId);
-  }, 2000);
+  typingTimer = setTimeout(() => socket.emit('stop-typing', currentChatUserId), 2000);
 });
-
-socket.on('user-typing', (data) => {
-  if (currentChatUserId === data.from) typingIndicator.classList.remove('hidden');
-});
-socket.on('user-stop-typing', (data) => {
-  if (currentChatUserId === data.from) typingIndicator.classList.add('hidden');
-});
+socket.on('user-typing', (data) => { if (currentChatUserId === data.from) typingIndicator.classList.remove('hidden'); });
+socket.on('user-stop-typing', (data) => { if (currentChatUserId === data.from) typingIndicator.classList.add('hidden'); });
 
 // ========== SNAP ==========
 snapBtn.addEventListener('click', () => snapFileInput.click());
@@ -344,16 +314,10 @@ snapFileInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    snapPreviewImg.src = ev.target.result;
-    snapPreviewImg.style.filter = 'none';
-    snapModal.classList.remove('hidden');
-  };
+  reader.onload = (ev) => { snapPreviewImg.src = ev.target.result; snapPreviewImg.style.filter = 'none'; snapModal.classList.remove('hidden'); };
   reader.readAsDataURL(file);
 });
-filterButtons.forEach(btn => {
-  btn.addEventListener('click', () => snapPreviewImg.style.filter = btn.dataset.filter);
-});
+filterButtons.forEach(btn => btn.addEventListener('click', () => snapPreviewImg.style.filter = btn.dataset.filter));
 closeSnapBtn.addEventListener('click', () => snapModal.classList.add('hidden'));
 sendSnapBtn.addEventListener('click', async () => {
   if (!snapPreviewImg.src || !currentChatUserId) return;
@@ -363,18 +327,30 @@ sendSnapBtn.addEventListener('click', async () => {
   img.crossOrigin = 'anonymous';
   img.src = snapPreviewImg.src;
   img.onload = async () => {
-    canvas.width = img.width;
-    canvas.height = img.height;
+    canvas.width = img.width; canvas.height = img.height;
     ctx.filter = snapPreviewImg.style.filter || 'none';
     ctx.drawImage(img, 0, 0);
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
-    const formData = new FormData();
-    formData.append('snap', blob, 'snap.jpg');
-    const res = await fetch('/upload-snap', { method:'POST', body:formData });
+    const formData = new FormData(); formData.append('media', blob, 'snap.jpg');
+    const res = await fetch('/upload-media', { method:'POST', body: formData });
     const data = await res.json();
     socket.emit('private-message', { to: currentChatUserId, text:'', type:'snap', mediaUrl: data.url });
     snapModal.classList.add('hidden');
   };
+});
+
+// ========== VIDEO ==========
+videoBtn.addEventListener('click', () => videoFileInput.click());
+videoFileInput.addEventListener('change', async () => {
+  const file = videoFileInput.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('media', file);
+  const res = await fetch('/upload-media', { method:'POST', body: formData });
+  const data = await res.json();
+  if (data.url) {
+    socket.emit('private-message', { to: currentChatUserId, text:'', type:'video', mediaUrl: data.url });
+  }
 });
 
 // ========== GIF ==========
@@ -392,8 +368,7 @@ async function searchGifs() {
   const json = await res.json();
   gifResults.innerHTML = '';
   json.data.forEach(gif => {
-    const img = document.createElement('img');
-    img.src = gif.images.fixed_height_small.url;
+    const img = document.createElement('img'); img.src = gif.images.fixed_height_small.url;
     img.addEventListener('click', () => {
       socket.emit('private-message', { to: currentChatUserId, text:'', type:'gif', mediaUrl: gif.images.fixed_height.url });
       gifModal.classList.add('hidden');
@@ -403,84 +378,42 @@ async function searchGifs() {
 }
 
 // ========== YOUTUBE SYNC ==========
-ytSyncBtn.addEventListener('click', () => {
-  ytPanel.classList.toggle('hidden');
-  if (!ytPanel.classList.contains('hidden') && ytReady && !ytPlayer) {
-    loadYtPlayer();
-  }
-});
-closeYtPanel.addEventListener('click', () => {
-  ytPanel.classList.add('hidden');
-});
-
-window.onYouTubeIframeAPIReady = function() {
-  ytReady = true;
-};
-
+ytSyncBtn.addEventListener('click', () => { ytPanel.classList.toggle('hidden'); if (!ytPanel.classList.contains('hidden') && ytReady && !ytPlayer) loadYtPlayer(); });
+closeYtPanel.addEventListener('click', () => ytPanel.classList.add('hidden'));
+window.onYouTubeIframeAPIReady = () => { ytReady = true; };
 function loadYtPlayer() {
   if (ytPlayer) return;
   ytPlayer = new YT.Player('ytPlayerContainer', {
-    height: '180',
-    width: '100%',
-    videoId: '',
-    playerVars: { controls: 1 },
-    events: {
-      onReady: () => {},
-      onStateChange: (event) => {
-        if (event.data == YT.PlayerState.PLAYING || event.data == YT.PlayerState.PAUSED) {
-          socket.emit('youtube-action', {
-            to: currentChatUserId,
-            action: event.data == YT.PlayerState.PLAYING ? 'play' : 'pause',
-            videoId: ytCurrentVideoId,
-            currentTime: ytPlayer.getCurrentTime(),
-            isPlaying: event.data == YT.PlayerState.PLAYING
-          });
-        }
+    height: '180', width: '100%', videoId: '', playerVars: { controls: 1 },
+    events: { onReady: () => {}, onStateChange: (event) => {
+      if (event.data == YT.PlayerState.PLAYING || event.data == YT.PlayerState.PAUSED) {
+        socket.emit('youtube-action', { to: currentChatUserId, action: event.data == YT.PlayerState.PLAYING ? 'play' : 'pause', videoId: ytCurrentVideoId, currentTime: ytPlayer.getCurrentTime(), isPlaying: event.data == YT.PlayerState.PLAYING });
       }
-    }
+    }}
   });
 }
-
 ytLoadBtn.addEventListener('click', () => {
   let videoId = ytVideoInput.value.trim();
   if (!videoId) return;
   if (videoId.includes('youtube.com') || videoId.includes('youtu.be')) {
-    const url = new URL(videoId);
-    videoId = videoId.includes('youtu.be') ? url.pathname.slice(1) : url.searchParams.get('v');
+    const url = new URL(videoId); videoId = videoId.includes('youtu.be') ? url.pathname.slice(1) : url.searchParams.get('v');
   }
   ytCurrentVideoId = videoId;
   if (!ytPlayer && ytReady) loadYtPlayer();
-  if (ytPlayer && ytPlayer.loadVideoById) {
-    ytPlayer.loadVideoById(videoId);
-    socket.emit('youtube-action', { to: currentChatUserId, action:'load', videoId, currentTime:0, isPlaying:true });
-  }
+  if (ytPlayer && ytPlayer.loadVideoById) { ytPlayer.loadVideoById(videoId); socket.emit('youtube-action', { to: currentChatUserId, action:'load', videoId, currentTime:0, isPlaying:true }); }
 });
-
 socket.on('youtube-action', (data) => {
   if (!currentChatUserId || data.from !== currentChatUserId) return;
   if (!ytPanel.classList.contains('hidden')) {
     if (!ytPlayer && ytReady) loadYtPlayer();
-    if (data.action === 'load' && ytPlayer && data.videoId) {
-      ytPlayer.loadVideoById(data.videoId, data.currentTime);
-      ytCurrentVideoId = data.videoId;
-    } else if (data.action === 'play' && ytPlayer) {
-      ytPlayer.playVideo();
-    } else if (data.action === 'pause' && ytPlayer) {
-      ytPlayer.pauseVideo();
-    }
+    if (data.action === 'load' && ytPlayer && data.videoId) { ytPlayer.loadVideoById(data.videoId, data.currentTime); ytCurrentVideoId = data.videoId; }
+    else if (data.action === 'play' && ytPlayer) ytPlayer.playVideo();
+    else if (data.action === 'pause' && ytPlayer) ytPlayer.pauseVideo();
   }
 });
 
-// ========== ONLINE STATUS (fixed) ==========
-socket.on('user-online', (userId) => {
-  onlineUsers.add(userId);
-  applyOnlineStatus();
-});
+// ========== ONLINE ==========
+socket.on('user-online', (userId) => { onlineUsers.add(userId); applyOnlineStatus(); });
+socket.on('user-offline', (userId) => { onlineUsers.delete(userId); applyOnlineStatus(); });
 
-socket.on('user-offline', (userId) => {
-  onlineUsers.delete(userId);
-  applyOnlineStatus();
-});
-
-// Initial load
 loadFriends();
