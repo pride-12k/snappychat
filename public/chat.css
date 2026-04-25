@@ -71,6 +71,7 @@ body {
 .chat-partner-info { flex:1; }
 .chat-partner-info span { display:block; }
 .chat-partner-info .typing-indicator { font-size:0.8rem; opacity:0.8; color:#ffcccb; }
+.profile-btn { background: rgba(255,255,255,0.2); border:none; color:white; padding:8px; border-radius:50%; cursor:pointer; font-size:1rem; margin-right:5px; }
 .yt-sync-btn { background: rgba(255,255,255,0.2); border:none; color:white; padding:8px 10px; border-radius:50%; cursor:pointer; font-size:1rem; }
 
 .messages {
@@ -82,24 +83,14 @@ body {
 .message .time { font-size:0.7rem; opacity:0.8; margin-top:5px; }
 .message img, .message video { max-width:200px; border-radius:10px; margin-top:5px; }
 .message .gif-img { max-width:200px; border-radius:10px; }
+.message video { max-width:220px; border-radius:10px; }
 
-/* Instagram preview card */
-.insta-preview-card {
-  margin-top:5px;
-}
-.insta-preview-card a {
-  text-decoration: none; color: inherit; display: block;
-}
-.insta-thumb {
-  width:100%; min-height:150px; background:#2a2a2a; border-radius:10px;
-  display:flex; align-items:center; justify-content:center; color:#aaa; font-size:0.9rem;
-}
-.insta-thumb img {
-  width:100%; border-radius:10px;
-}
-.insta-info {
-  margin-top:5px; font-size:0.85rem; color:#ccc;
-}
+/* Instagram preview */
+.insta-preview-card { margin-top:5px; }
+.insta-preview-card a { text-decoration: none; color: inherit; display: block; }
+.insta-thumb { width:100%; min-height:150px; background:#2a2a2a; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:0.9rem; }
+.insta-thumb img { width:100%; border-radius:10px; }
+.insta-info { margin-top:5px; font-size:0.85rem; color:#ccc; }
 
 .chat-input {
   display:flex; gap:8px; padding:10px 15px; border-top:1px solid #333; background:#1a1a1a; align-items:center;
@@ -129,7 +120,16 @@ body {
 .snap-actions { display:flex; justify-content:center; gap:10px; margin-top:15px; }
 .snap-actions button { padding:10px 20px; border:none; border-radius:15px; cursor:pointer; font-weight:bold; }
 #sendSnapBtn { background:#ff6b6b; color:white; }
-#closeSnapBtn, #closeGifBtn { background:#444; color:white; }
+#closeSnapBtn, #closeGifBtn, #closeProfileBtn { background:#444; color:white; }
+
+/* Profile Modal */
+.profile-pic-preview { text-align:center; margin-bottom:15px; }
+.profile-pic-preview img { width:100px; height:100px; border-radius:50%; object-fit:cover; border:3px solid #ff6b6b; }
+.dp-label { display:block; text-align:center; margin:10px 0; color:#ff6b6b; cursor:pointer; }
+#profileUsername { width:100%; padding:12px; border:1px solid #333; border-radius:10px; background:#2a2a2a; color:white; margin:10px 0; }
+.profile-actions { display:flex; gap:10px; justify-content:center; margin-top:15px; }
+.profile-actions button { padding:10px 20px; border:none; border-radius:15px; cursor:pointer; font-weight:bold; }
+#saveProfileBtn { background:#ff6b6b; color:white; }
 
 .gif-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .gif-grid img { width:100%; border-radius:10px; cursor:pointer; }
