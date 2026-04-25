@@ -31,7 +31,7 @@ const FRIEND_REQUESTS_FILE = 'friend_requests.json';
 
 if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, '[]');
 if (!fs.existsSync(CHAT_FILE)) fs.writeFileSync(CHAT_FILE, '[]');
-if (!fs.existsSync(FRIENDS_FILE)) fs.writeFileSync(FRIENDS_FILE, '{}'); // key: userId -> [friendIds]
+if (!fs.existsSync(FRIENDS_FILE)) fs.writeFileSync(FRIENDS_FILE, '{}');
 if (!fs.existsSync(FRIEND_REQUESTS_FILE)) fs.writeFileSync(FRIEND_REQUESTS_FILE, '[]');
 if (!fs.existsSync('public/uploads')) fs.mkdirSync('public/uploads', { recursive: true });
 if (!fs.existsSync('public/default-dp.png')) fs.writeFileSync('public/default-dp.png', '');
@@ -55,7 +55,6 @@ app.post('/signup', upload.single('dp'), async (req, res) => {
   };
   users.push(newUser);
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  // Initialize friends list
   const friends = JSON.parse(fs.readFileSync(FRIENDS_FILE));
   friends[newUser.id] = [];
   fs.writeFileSync(FRIENDS_FILE, JSON.stringify(friends, null, 2));
@@ -75,8 +74,37 @@ app.post('/login', async (req, res) => {
   res.json({ success: true, user: { id: user.id, username: user.username, dp: user.dp } });
 });
 
+// ---------- UPDATE PROFILE ----------
+app.post('/update-profile', upload.single('dp'), (req, res) => {
+  const { userId, username } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID required' });
+
+  let users = JSON.parse(fs.readFileSync(USERS_FILE));
+  const userIndex = users.findIndex(u => u.id === userId);
+  if (userIndex === -1) return res.status(404).json({ error: 'User not found' });
+
+  if (username) {
+    if (users.find(u => u.username === username && u.id !== userId)) {
+      return res.status(400).json({ error: 'Username already taken' });
+    }
+    users[userIndex].username = username;
+  }
+  if (req.file) {
+    users[userIndex].dp = '/uploads/' + req.file.filename;
+  }
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  const updatedUser = users[userIndex];
+  res.json({ success: true, user: { id: updatedUser.id, username: updatedUser.username, dp: updatedUser.dp } });
+});
+
+// ---------- UPLOAD MEDIA (snap & video) ----------
+app.post('/upload-media', upload.single('media'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const type = req.file.mimetype.startsWith('video') ? 'video' : 'image';
+  res.json({ url: '/uploads/' + req.file.filename, type });
+});
+
 // ---------- FRIEND REQUESTS ----------
-// Send friend request
 app.post('/friend-request', (req, res) => {
   const { fromId, toUsername } = req.body;
   const users = JSON.parse(fs.readFileSync(USERS_FILE));
@@ -90,7 +118,6 @@ app.post('/friend-request', (req, res) => {
   }
 
   const requests = JSON.parse(fs.readFileSync(FRIEND_REQUESTS_FILE));
-  // Check if already pending
   const existing = requests.find(r => r.from === fromId && r.to === toUser.id && r.status === 'pending');
   if (existing) return res.status(400).json({ error: 'Request already sent' });
 
@@ -100,11 +127,9 @@ app.post('/friend-request', (req, res) => {
   res.json({ success: true });
 });
 
-// Get pending received requests
 app.get('/friend-requests/:userId', (req, res) => {
   const requests = JSON.parse(fs.readFileSync(FRIEND_REQUESTS_FILE));
   const userReqs = requests.filter(r => r.to === req.params.userId && r.status === 'pending');
-  // Populate sender username and dp
   const users = JSON.parse(fs.readFileSync(USERS_FILE));
   const populated = userReqs.map(r => {
     const sender = users.find(u => u.id === r.from);
@@ -113,20 +138,17 @@ app.get('/friend-requests/:userId', (req, res) => {
   res.json(populated);
 });
 
-// Accept friend request
 app.post('/accept-friend', (req, res) => {
-  const { requestId, userId } = req.body; // userId is the accepter
+  const { requestId, userId } = req.body;
   const requests = JSON.parse(fs.readFileSync(FRIEND_REQUESTS_FILE));
   const reqIndex = requests.findIndex(r => r.id === requestId);
   if (reqIndex === -1) return res.status(404).json({ error: 'Request not found' });
   const request = requests[reqIndex];
   if (request.to !== userId) return res.status(403).json({ error: 'Not authorized' });
 
-  // Update request status
   requests[reqIndex].status = 'accepted';
   fs.writeFileSync(FRIEND_REQUESTS_FILE, JSON.stringify(requests, null, 2));
 
-  // Add each other to friends lists
   const friends = JSON.parse(fs.readFileSync(FRIENDS_FILE));
   if (!friends[request.from]) friends[request.from] = [];
   if (!friends[request.to]) friends[request.to] = [];
@@ -137,7 +159,6 @@ app.post('/accept-friend', (req, res) => {
   res.json({ success: true });
 });
 
-// Reject friend request
 app.post('/reject-friend', (req, res) => {
   const { requestId, userId } = req.body;
   const requests = JSON.parse(fs.readFileSync(FRIEND_REQUESTS_FILE));
@@ -149,7 +170,7 @@ app.post('/reject-friend', (req, res) => {
   res.json({ success: true });
 });
 
-// ---------- GET FRIENDS LIST with last message preview ----------
+// ---------- GET FRIENDS LIST ----------
 app.get('/friends/:userId', (req, res) => {
   const friends = JSON.parse(fs.readFileSync(FRIENDS_FILE));
   const userFriends = friends[req.params.userId] || [];
@@ -159,7 +180,6 @@ app.get('/friends/:userId', (req, res) => {
   const friendList = userFriends.map(friendId => {
     const friend = users.find(u => u.id === friendId);
     if (!friend) return null;
-    // get last message between userId and friendId
     const conv = chats.filter(m =>
       (m.from === req.params.userId && m.to === friendId) ||
       (m.from === friendId && m.to === req.params.userId)
@@ -169,14 +189,14 @@ app.get('/friends/:userId', (req, res) => {
       id: friend.id,
       username: friend.username,
       dp: friend.dp,
-      lastMessage: lastMsg ? (lastMsg.type === 'text' ? lastMsg.text : (lastMsg.type === 'snap' ? '📷 Snap' : lastMsg.type === 'gif' ? '🎞️ GIF' : '📹 Instagram')) : '',
+      lastMessage: lastMsg ? (lastMsg.type === 'text' ? lastMsg.text : (lastMsg.type === 'snap' ? '📷 Snap' : lastMsg.type === 'gif' ? '🎞️ GIF' : lastMsg.type === 'video' ? '🎥 Video' : '📹 Instagram')) : '',
       lastTime: lastMsg ? lastMsg.timestamp : null
     };
   }).filter(Boolean).sort((a, b) => (b.lastTime || 0) - (a.lastTime || 0));
   res.json(friendList);
 });
 
-// ---------- SEARCH USER (excluding friends) ----------
+// ---------- SEARCH USER ----------
 app.get('/search', (req, res) => {
   const { q, userId } = req.query;
   if (!q || !userId) return res.json([]);
@@ -195,7 +215,6 @@ app.get('/search', (req, res) => {
 
 // ---------- ONLINE USERS ----------
 const onlineUsers = new Map();
-const typingUsers = new Map(); // userId -> timeout
 
 io.on('connection', (socket) => {
   let currentUserId = null;
@@ -270,7 +289,6 @@ io.on('connection', (socket) => {
     socket.emit('conversation-history', conv);
   });
 
-  // Typing indicator
   socket.on('typing', (to) => {
     if (!currentUserId || !to) return;
     const recipientSocket = onlineUsers.get(to);
@@ -294,7 +312,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ---------- YOUTUBE SYNC ----------
   socket.on('youtube-action', (data) => {
     const { to, action, videoId, currentTime, isPlaying } = data;
     if (!currentUserId || !to) return;
@@ -309,12 +326,6 @@ io.on('connection', (socket) => {
       });
     }
   });
-});
-
-// ---------- UPLOAD SNAP ----------
-app.post('/upload-snap', upload.single('snap'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file' });
-  res.json({ url: '/uploads/' + req.file.filename });
 });
 
 const PORT = process.env.PORT || 3000;
